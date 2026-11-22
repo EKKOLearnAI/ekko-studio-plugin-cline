@@ -11,6 +11,9 @@ const native = process.env.EKKO_CLINE_NATIVE_TEST_CLI
 const owner = { userId: 1, profile: 'default', agentId: 'plugin:cline/cline' }
 const lifecycle = { add() {} }
 const attachmentText = 'cline-native-test-file-content'
+const commandProof = 'cline-terminal-proof.txt'
+const commandText = 'cline-native-terminal-proof'
+const command = { commands: ['echo ' + commandText + ' > ' + commandProof] }
 
 function respond(res, model, block, delta, stopReason) {
   res.writeHead(200, { 'content-type': 'text/event-stream' })
@@ -47,6 +50,10 @@ test('official Cline routes concurrent model choices and honors Studio allow and
       const count = (callCounts.get(model) ?? 0) + 1
       callCounts.set(model, count)
       if (count === 1) {
+        assert.ok(body.tools.some(tool => tool.name === 'run_commands'))
+        respond(res, model, { type: 'tool_use', id: 'toolu_terminal', name: 'run_commands', input: {} },
+          { type: 'input_json_delta', partial_json: JSON.stringify(command) }, 'tool_use')
+      } else if (count === 2) {
         assert.ok(body.tools.some(tool => tool.name === 'read_files'))
         const messages = body.messages.flatMap(message => message.content)
           .map(content => typeof content === 'string' ? content : content.text ?? '').join('\n')
@@ -112,13 +119,14 @@ test('official Cline routes concurrent model choices and honors Studio allow and
       input: [{ type: 'text', text: 'Read the attachment and reply.' }, { type: 'file', assetId: 'attachment' }],
       history: [], instructions: [], options: {},
     }, ctx)
+    assert.equal((await readFile(join(workspaceDir, commandProof), 'utf8')).trim(), commandText)
     assert.deepEqual(await readdir(runtimeDir), [])
-    assert.deepEqual(answer.usage, { inputTokens: 68, outputTokens: 24, cacheReadTokens: 12, isEstimated: false })
+    assert.deepEqual(answer.usage, { inputTokens: 102, outputTokens: 36, cacheReadTokens: 18, isEstimated: false })
     return answer.content[0].text
   }))
   assert.deepEqual(errors, [])
   assert.deepEqual(answers, picks.map(model => 'loopback ' + model))
-  assert.deepEqual(picks.map(model => callCounts.get(model)), [2, 2])
+  assert.deepEqual(picks.map(model => callCounts.get(model)), [3, 3])
   assert.deepEqual(approvals.map(list => list.length), [1, 1])
   assert.deepEqual(picks.map(model => results.get(model)), [true, false])
   assert.equal(await readFile(providerFile, 'utf8'), settings)
@@ -133,12 +141,12 @@ test('official Cline uses the selected Studio model and token for each concurren
   const requests = []
   const modelServer = createServer(async (req, res) => {
     const body = JSON.parse(Buffer.concat(await Array.fromAsync(req)).toString())
+    const first = !requests.some(request => request.model === body.model)
     requests.push({ path: req.url, model: body.model, auth: req.headers.authorization })
     res.writeHead(200, { 'content-type': 'text/event-stream' })
-    for (const choice of [
-      { index: 0, delta: { role: 'assistant', content: 'scoped ' + body.model }, finish_reason: null },
-      { index: 0, delta: {}, finish_reason: 'stop' },
-    ]) {
+    const delta = first ? { role: 'assistant', tool_calls: [{ index: 0, id: 'call_terminal', type: 'function',
+      function: { name: 'run_commands', arguments: JSON.stringify(command) } }] } : { role: 'assistant', content: 'scoped ' + body.model }
+    for (const choice of [{ index: 0, delta, finish_reason: null }, { index: 0, delta: {}, finish_reason: first ? 'tool_calls' : 'stop' }]) {
       const chunk = { id: 'chatcmpl_scope', object: 'chat.completion.chunk', created: 0, model: body.model, choices: [choice] }
       res.write('data: ' + JSON.stringify(chunk) + '\n\n')
     }
@@ -178,17 +186,18 @@ test('official Cline uses the selected Studio model and token for each concurren
       model: { model, provider: 'studio-fixture', apiMode: 'chat_completions', baseUrl: 'http://127.0.0.1:' + modelServer.address().port + '/studio/v1',
         token: 'leased-studio-token-' + index, contextWindow: 100000, outputLimit: 4096 },
       output: { async emit(event) { events.push(event) } },
-      interactions: { async approve() { throw new Error('Unexpected tool call') } },
+      interactions: { async approve() { throw new Error('Unexpected Studio approval') } },
     }
     const answer = await agent.runtime.createSession(ctx).run({
       input: [{ type: 'text', text: 'Send a short response.' }], history: [], instructions: [], options: {},
     }, ctx)
+    assert.equal((await readFile(join(workspaceDir, commandProof), 'utf8')).trim(), commandText)
     assert.equal(events.filter(event => event.type === 'text.delta').map(event => event.text).join(''), answer.content[0].text)
     assert.deepEqual(await readdir(runtimeDir), [])
     return answer.content[0].text
   }))
   assert.deepEqual(answers, picks.map(model => 'scoped ' + model))
-  assert.deepEqual(requests.sort((left, right) => left.model.localeCompare(right.model)), picks.map((model, index) => ({
+  assert.deepEqual(requests.sort((left, right) => left.model.localeCompare(right.model)), picks.flatMap((model, index) => [0, 1].map(() => ({
     path: '/studio/v1/chat/completions', model, auth: 'Bearer leased-studio-token-' + index,
-  })))
+  }))))
 })

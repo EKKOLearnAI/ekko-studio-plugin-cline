@@ -126,6 +126,19 @@ test('passes attachment bytes to the engine and removes the private staging dire
   assert.deepEqual(await readdir(run.ctx.paths.runtimeDir), [])
 })
 
+test('automatically grants only a one-time option for the current native shell request', async t => {
+  const root = await useFixture(t, 'run_commands')
+  const definition = agent(root)
+  for (const name of ['run_commands', 'Bash']) {
+    process.env.CLINE_MODEL = name
+    const run = await chat(definition, root, name, { decision: 'denied' })
+    const result = await run.session.run(input, run.ctx)
+    assert.equal(result.content[0].text, 'model-a:once')
+    assert.deepEqual(run.calls, [])
+    assert.ok(run.events.some(event => event.type === 'tool.completed' && event.callId === 'current'))
+  }
+})
+
 test('stops before prompting when the engine cannot confirm model or approval settings', async t => {
   const root = await useFixture(t, 'unsafe')
   const definition = agent(root)

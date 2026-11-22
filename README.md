@@ -20,7 +20,7 @@ The Studio account and Profile that enabled the plugin can manage native setting
 
 ## Runtime
 
-- Both modes require Studio tool approvals and use a fresh ACP session per turn. Studio retains the chat history. A selected model is verified before prompting.
+- Both modes automatically grant one-time approval to Cline’s native terminal commands. Other tool approval requests use Studio. Each turn starts a fresh ACP session, verifies the selected model, and includes Studio chat history.
 - Global uses the native `~/.cline` directory or the absolute `EKKO_CLINE_CONFIG_DIR` from the service environment. Cline ACP can restore native Cline, ClinePass, or ChatGPT Subscription credentials. Advanced deployments can set `CLINE_PROVIDER` and `CLINE_API_KEY` in the Studio service environment for a native provider.
 - Scoped uses an isolated Cline configuration and the Studio Chat Completions proxy. The bound Studio model and run credential are isolated from native Cline settings.
 - Global returns token counts from the completed native Cline session whenever available. Scoped usage is recorded by the Studio model proxy.

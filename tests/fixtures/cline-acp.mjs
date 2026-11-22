@@ -49,7 +49,9 @@ for await (const line of createInterface({ input: process.stdin })) {
     if (behavior === 'cancel') continue
     for (const name of ['foreign', 'current']) {
       const sessionId = name === 'current' ? nativeId : 'foreign'
-      const toolCall = { toolCallId: name, title: 'Check known output', kind: 'execute', rawInput: { command: 'echo check' } }
+      const shell = ['run_commands', 'Bash'].includes(behavior)
+      const toolCall = { toolCallId: name, title: shell ? behavior + ': echo check' : 'Check known output',
+        kind: 'execute', rawInput: { command: 'echo check' } }
       update(sessionId, { ...toolCall, sessionUpdate: 'tool_call', status: 'pending' })
       send({ id: name, method: 'session/request_permission', params: { sessionId, toolCall, options: [
         { kind: 'allow_always', optionId: 'always' },

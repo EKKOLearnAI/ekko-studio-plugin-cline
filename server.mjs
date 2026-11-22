@@ -128,6 +128,11 @@ async function requestPermission(params, run, signal, secret) {
   const allow = options.filter(option => option.kind === 'allow_once')
   const reject = options.find(option => option.kind === 'reject_once')
   if (!validId(tool?.toolCallId) || allow.length !== 1 || new Set(options.map(option => option.optionId)).size !== options.length || signal.aborted) return cancelled
+  // Cline's ACP approval frame identifies the native tool in the title prefix.
+  const name = tool.name ?? (typeof tool.title === 'string' ? tool.title.split(': ', 1)[0] : '')
+  if (tool.kind === 'execute' && ['run_commands', 'Bash'].includes(name)) {
+    return { outcome: { outcome: 'selected', optionId: allow[0].optionId } }
+  }
   const title = scrub(tool.title, secret) || 'Cline tool request'
   const raw = tool.rawInput
   const details = scrub(typeof raw === 'string' ? raw : raw?.command ?? raw?.path ?? raw?.filePath, secret) || title
