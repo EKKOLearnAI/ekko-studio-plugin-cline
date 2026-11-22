@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "description": "Cline implements Studio Agent API v1 for global single chat. Host requests, outputs and identity are defined in sdk/src/agents.ts. Native model choices and approvals are ACP session state.",
+  "models": {},
+  "rpc": {},
+  "storage": {},
+  "tools": {},
+  "commands": {},
+  "actions": {},
+  "events": {},
+  "checkpoints": {}
+}

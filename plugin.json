@@ -1,0 +1,65 @@
+{
+  "id": "cline",
+  "name": "Cline CLI",
+  "description": "Use Cline CLI and its native models in Studio.",
+  "i18n": {
+    "en": {
+      "name": "Cline CLI",
+      "description": "Use Cline CLI and its native models in Studio."
+    },
+    "zh": {
+      "name": "Cline CLI",
+      "description": "在 Studio 中使用 Cline CLI 及其原生模型。"
+    },
+    "zh-TW": {
+      "name": "Cline CLI",
+      "description": "在 Studio 中使用 Cline CLI 及其原生模型。"
+    },
+    "ja": {
+      "name": "Cline CLI",
+      "description": "Studio で Cline CLI とそのネイティブモデルを使用します。"
+    },
+    "ko": {
+      "name": "Cline CLI",
+      "description": "Studio에서 Cline CLI와 기본 모델을 사용합니다."
+    },
+    "fr": {
+      "name": "Cline CLI",
+      "description": "Utilisez Cline CLI et ses modèles natifs dans Studio."
+    },
+    "es": {
+      "name": "Cline CLI",
+      "description": "Usa Cline CLI y sus modelos nativos en Studio."
+    },
+    "de": {
+      "name": "Cline CLI",
+      "description": "Verwende Cline CLI und seine nativen Modelle in Studio."
+    },
+    "pt": {
+      "name": "Cline CLI",
+      "description": "Use o Cline CLI e seus modelos nativos no Studio."
+    },
+    "ru": {
+      "name": "Cline CLI",
+      "description": "Используйте Cline CLI и его собственные модели в Studio."
+    },
+    "ar": {
+      "name": "Cline CLI",
+      "description": "استخدم Cline CLI ونماذجه الأصلية في Studio."
+    },
+    "tr": {
+      "name": "Cline CLI",
+      "description": "Studio’da Cline CLI’ı ve yerel modellerini kullanın."
+    }
+  },
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "server": "server.mjs",
+  "icon": "assets/icon.png",
+  "permissions": [
+    "agents"
+  ],
+  "repository": "https://github.com/EKKOLearnAI/ekko-studio-plugin-cline",
+  "homepage": "https://cline.bot/cli",
+  "license": "MIT"
+}
