@@ -1,16 +1,22 @@
 # Cline CLI for Ekko Studio
 
-Use Cline's native model catalog and tool approvals in Studio single chat. The Studio Agent ID is `plugin:cline/cline`.
+Cline registers as `plugin:cline/cline`. It supports streaming single chat in **global** and **scoped** mode.
 
-## Install
+## Setup
 
-1. Install the official [Cline CLI](https://cline.bot/cli) on the Studio host. This plugin was verified against Cline CLI 3.0.75.
-2. Run `cline auth` as the OS account running Studio. Cline ACP can restore native Cline, ClinePass, or ChatGPT Subscription credentials. Advanced deployments can pin the native provider with Cline's `CLINE_PROVIDER` and supply `CLINE_API_KEY` through the Studio service environment.
-3. In Studio's Plugin Center, install [this GitHub repository](https://github.com/EKKOLearnAI/ekko-studio-plugin-cline), then enable it. Select Cline CLI and a model from the active native provider in a single chat.
+1. Install or update this [plugin repository](https://github.com/EKKOLearnAI/ekko-studio-plugin-cline) in Studio’s Plugin Center and enable it.
+2. Open **Agent management → Cline CLI → Install**. Studio installs the official npm platform package selected by the `cline` npm release and verifies the native executable. The Studio host needs Node.js and npm.
+3. Select **Cline CLI** in a new chat. For **global**, open **Settings → Native login** on the Agent card and run the displayed command as the Studio service OS account. Refresh the model list to select a model from the active Cline provider. For **scoped**, select a provider and model configured in Studio. Scoped mode uses the Studio model gateway and starts without a Cline account.
 
-If Studio cannot find Cline on its PATH, set `EKKO_CLINE_EXECUTABLE` to the absolute binary path in the Studio service environment. On macOS and Linux, the normal npm executable is discovered and its native binary is launched directly. On Windows, a native `cline.exe` is used. For a custom Cline configuration directory, set `EKKO_CLINE_CONFIG_DIR` and sign in with `cline --config <directory> auth`.
+Use **Check for updates** and **Update** for the Studio-managed engine. **Delete** removes the managed binary and retains native authentication and configuration. An external Cline installation detected on the host remains managed by its installer. For an explicit override, set `EKKO_CLINE_EXECUTABLE` to the absolute path of the external binary. Studio launches the native binary directly, including when a standard npm wrapper is on PATH.
 
-The Studio account and Profile that enabled the plugin can access the host's native Cline login. Each turn starts a fresh ACP session, applies the selected model to that session and uses Studio chat history for context. Studio handles tool permission requests. Scope is global single chat. Studio model proxy, native session resume and run-scoped MCP tool execution await verification. Files and images are staged for Cline's file-reading tools. Image inspection depends on the selected model, the file format and Cline's tool support.
+## Runtime
+
+- Both modes require Studio tool approvals and use a fresh ACP session per turn. Studio retains the chat history. A selected model is verified before prompting.
+- Global uses the native `~/.cline` directory or the absolute `EKKO_CLINE_CONFIG_DIR` from the service environment. Cline ACP can restore native Cline, ClinePass, or ChatGPT Subscription credentials. Advanced deployments can set `CLINE_PROVIDER` and `CLINE_API_KEY` in the Studio service environment for a native provider.
+- Scoped uses an isolated Cline configuration and the Studio Chat Completions proxy. The bound Studio model and run credential are isolated from native Cline settings.
+- Files and images are staged so Cline’s file-reading tools can access the uploaded bytes. Image inspection depends on the format, native tool and selected model. Studio MCP tool execution and native session resume still need acceptance.
+- See the [plugin contract](docs/CONTRACTS.md) for the runtime and management details.
 
 ## Develop
 
@@ -23,6 +29,6 @@ npm test
 npm pack --dry-run --ignore-scripts
 ```
 
-Set `EKKO_CLINE_NATIVE_TEST_CLI` to an absolute path to the official Cline binary to include the native test. It uses an isolated configuration and a local Anthropic-compatible test server.
+Set `EKKO_CLINE_NATIVE_TEST_CLI` to an absolute path to the official Cline binary to include the native tests. They use isolated configuration with local Anthropic-compatible and Chat Completions endpoints. The tested native release is `3.0.75`.
 
-See [the plugin contract](docs/CONTRACTS.md) for runtime behavior. The plugin is MIT licensed. The bundled Studio SDK retains its [license](sdk/LICENSE) and [notice](sdk/NOTICE). Install the upstream CLI separately under its own license.
+The plugin is MIT licensed. The bundled Studio SDK retains its [license](sdk/LICENSE) and [notice](sdk/NOTICE). The [official Cline app icon](https://github.com/cline/cline/blob/0905884ab51cc10207902a07d992157568a0ed95/assets/branding/cline-app-icon.png) is included unchanged with the [upstream Apache 2.0 license](assets/CLINE-ICON-LICENSE). Cline’s trademarks are the property of their respective owners.

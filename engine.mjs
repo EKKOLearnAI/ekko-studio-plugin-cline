@@ -14,8 +14,9 @@ function pathValue(source) {
   return Object.entries(source).find(([key]) => key.toUpperCase() === 'PATH')?.[1] ?? ''
 }
 
-export function childEnvironment(source = process.env) {
-  const env = Object.fromEntries(Object.entries(source).filter(([name]) => allowed.test(name) && name.toUpperCase() !== 'PATH'))
+export function childEnvironment(source = process.env, { nativeProvider = true } = {}) {
+  const env = Object.fromEntries(Object.entries(source).filter(([name]) =>
+    allowed.test(name) && name.toUpperCase() !== 'PATH' && (nativeProvider || !/^CLINE_/i.test(name))))
   env.PATH = pathValue(source).split(delimiter).filter(isAbsolute).join(delimiter)
   if (process.versions.electron) env.ELECTRON_RUN_AS_NODE = '1'
   return env
@@ -26,6 +27,13 @@ export function configArgs(source = process.env) {
   if (!dir) return []
   if (!isAbsolute(dir)) throw new Error('Set EKKO_CLINE_CONFIG_DIR to an absolute Cline configuration directory.')
   return ['--config', dir]
+}
+
+export function loginCommand(engine) {
+  if (!engine) return ''
+  const args = [engine.command, ...engine.prefix, ...configArgs(), 'auth']
+  if (process.platform === 'win32') return '& ' + args.map(arg => "'" + arg.replaceAll("'", "''") + "'").join(' ')
+  return args.map(arg => "'" + arg.replaceAll("'", "'\"'\"'") + "'").join(' ')
 }
 
 async function accessible(file) {

@@ -84,7 +84,10 @@ test('official Cline routes concurrent model choices and honors Studio allow and
   await writeFile(providerFile, settings, { mode: 0o600 })
 
   let agent
-  apply({ identity: owner, extensions: { agents: { register(value) { agent = value; return { dispose() {} } } } } })
+  apply({ identity: owner, paths: { dataDir: root }, extensions: {
+    agents: { register(value) { agent = value; return { dispose() {} } } },
+    rpc: { register() { return () => {} } },
+  } })
   const signal = AbortSignal.timeout(30_000)
   const catalog = await agent.modes.global.listModels({ identity: owner, signal, lifecycle })
   assert.equal(catalog.status, 'ready')
@@ -118,4 +121,73 @@ test('official Cline routes concurrent model choices and honors Studio allow and
   assert.deepEqual(approvals.map(list => list.length), [1, 1])
   assert.deepEqual(picks.map(model => results.get(model)), [true, false])
   assert.equal(await readFile(providerFile, 'utf8'), settings)
+})
+
+test('official Cline uses the selected Studio model and token for each concurrent scoped turn', {
+  skip: !native && 'Set EKKO_CLINE_NATIVE_TEST_CLI to the official Cline binary.',
+  timeout: 35_000,
+}, async t => {
+  const root = await mkdtemp(join(tmpdir(), 'studio-cline-scoped-'))
+  const picks = ['example/first-studio-model', 'other/second-studio-model']
+  const requests = []
+  const modelServer = createServer(async (req, res) => {
+    const body = JSON.parse(Buffer.concat(await Array.fromAsync(req)).toString())
+    requests.push({ path: req.url, model: body.model, auth: req.headers.authorization })
+    res.writeHead(200, { 'content-type': 'text/event-stream' })
+    for (const choice of [
+      { index: 0, delta: { role: 'assistant', content: 'scoped ' + body.model }, finish_reason: null },
+      { index: 0, delta: {}, finish_reason: 'stop' },
+    ]) {
+      const chunk = { id: 'chatcmpl_scope', object: 'chat.completion.chunk', created: 0, model: body.model, choices: [choice] }
+      res.write('data: ' + JSON.stringify(chunk) + '\n\n')
+    }
+    res.end('data: [DONE]\n\n')
+  })
+  await once(modelServer.listen(0, '127.0.0.1'), 'listening')
+  const environment = {
+    EKKO_CLINE_EXECUTABLE: native, EKKO_CLINE_CONFIG_DIR: 'invalid-global-config',
+    CLINE_PROVIDER: 'other-provider', CLINE_API_KEY: 'dummy-global-key', CLINE_MODEL: 'native-default',
+  }
+  const initial = Object.fromEntries(Object.keys(environment).map(key => [key, process.env[key]]))
+  Object.assign(process.env, environment)
+  t.after(async () => {
+    for (const [key, value] of Object.entries(initial)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+    modelServer.closeAllConnections()
+    await new Promise(resolve => modelServer.close(resolve))
+    await rm(root, { recursive: true, force: true })
+  })
+
+  let agent
+  apply({ identity: owner, paths: { dataDir: root }, extensions: {
+    agents: { register(value) { agent = value; return { dispose() {} } } },
+    rpc: { register() { return () => {} } },
+  } })
+  assert.deepEqual(agent.modes.scoped.protocols, ['chat_completions'])
+  const signal = AbortSignal.timeout(25_000)
+  const answers = await Promise.all(picks.map(async (model, index) => {
+    const workspaceDir = join(root, 'workspace-' + index)
+    const runtimeDir = join(root, 'runtime-' + index)
+    await mkdir(workspaceDir)
+    const events = []
+    const ctx = { identity: { ...owner, userId: 2 + index, profile: 'scoped', sessionId: 'session-' + index, runId: 'run-' + index },
+      lifecycle, mode: 'scoped', paths: { workspaceDir, runtimeDir }, signal, deadlineAt: Date.now() + 20_000,
+      model: { model, provider: 'studio-fixture', apiMode: 'chat_completions', baseUrl: 'http://127.0.0.1:' + modelServer.address().port + '/studio/v1',
+        token: 'leased-studio-token-' + index, contextWindow: 100000, outputLimit: 4096 },
+      output: { async emit(event) { events.push(event) } },
+      interactions: { async approve() { throw new Error('Unexpected tool call') } },
+    }
+    const answer = await agent.runtime.createSession(ctx).run({
+      input: [{ type: 'text', text: 'Send a short response.' }], history: [], instructions: [], options: {},
+    }, ctx)
+    assert.equal(events.filter(event => event.type === 'text.delta').map(event => event.text).join(''), answer.content[0].text)
+    assert.deepEqual(await readdir(runtimeDir), [])
+    return answer.content[0].text
+  }))
+  assert.deepEqual(answers, picks.map(model => 'scoped ' + model))
+  assert.deepEqual(requests.sort((left, right) => left.model.localeCompare(right.model)), picks.map((model, index) => ({
+    path: '/studio/v1/chat/completions', model, auth: 'Bearer leased-studio-token-' + index,
+  })))
 })

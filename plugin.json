@@ -1,65 +1,111 @@
 {
   "id": "cline",
   "name": "Cline CLI",
-  "description": "Use Cline CLI and its native models in Studio.",
+  "description": "Run Cline CLI with native or Studio-selected models.",
   "i18n": {
     "en": {
       "name": "Cline CLI",
-      "description": "Use Cline CLI and its native models in Studio."
+      "description": "Run Cline CLI with native or Studio-selected models.",
+      "views": {
+        "native-login": "Native login"
+      }
     },
     "zh": {
       "name": "Cline CLI",
-      "description": "在 Studio 中使用 Cline CLI 及其原生模型。"
+      "description": "使用 Cline 原生模型或在 Studio 中选择的模型。",
+      "views": {
+        "native-login": "原生登录"
+      }
     },
     "zh-TW": {
       "name": "Cline CLI",
-      "description": "在 Studio 中使用 Cline CLI 及其原生模型。"
+      "description": "使用 Cline 原生模型或在 Studio 中選擇的模型。",
+      "views": {
+        "native-login": "原生登入"
+      }
     },
     "ja": {
       "name": "Cline CLI",
-      "description": "Studio で Cline CLI とそのネイティブモデルを使用します。"
+      "description": "Cline のネイティブモデルまたは Studio で選択したモデルを使用します。",
+      "views": {
+        "native-login": "ネイティブログイン"
+      }
     },
     "ko": {
       "name": "Cline CLI",
-      "description": "Studio에서 Cline CLI와 기본 모델을 사용합니다."
+      "description": "Cline 기본 모델이나 Studio에서 선택한 모델을 사용합니다.",
+      "views": {
+        "native-login": "네이티브 로그인"
+      }
     },
     "fr": {
       "name": "Cline CLI",
-      "description": "Utilisez Cline CLI et ses modèles natifs dans Studio."
+      "description": "Utilisez les modèles natifs de Cline ou ceux sélectionnés dans Studio.",
+      "views": {
+        "native-login": "Connexion native"
+      }
     },
     "es": {
       "name": "Cline CLI",
-      "description": "Usa Cline CLI y sus modelos nativos en Studio."
+      "description": "Usa los modelos nativos de Cline o los seleccionados en Studio.",
+      "views": {
+        "native-login": "Inicio de sesión nativo"
+      }
     },
     "de": {
       "name": "Cline CLI",
-      "description": "Verwende Cline CLI und seine nativen Modelle in Studio."
+      "description": "Verwende native Cline-Modelle oder in Studio ausgewählte Modelle.",
+      "views": {
+        "native-login": "Native Anmeldung"
+      }
     },
     "pt": {
       "name": "Cline CLI",
-      "description": "Use o Cline CLI e seus modelos nativos no Studio."
+      "description": "Use os modelos nativos do Cline ou os selecionados no Studio.",
+      "views": {
+        "native-login": "Login nativo"
+      }
     },
     "ru": {
       "name": "Cline CLI",
-      "description": "Используйте Cline CLI и его собственные модели в Studio."
+      "description": "Используйте собственные модели Cline или модели, выбранные в Studio.",
+      "views": {
+        "native-login": "Вход в CLI"
+      }
     },
     "ar": {
       "name": "Cline CLI",
-      "description": "استخدم Cline CLI ونماذجه الأصلية في Studio."
+      "description": "استخدم نماذج Cline الأصلية أو النماذج التي تختارها في Studio.",
+      "views": {
+        "native-login": "تسجيل الدخول من الطرفية"
+      }
     },
     "tr": {
       "name": "Cline CLI",
-      "description": "Studio’da Cline CLI’ı ve yerel modellerini kullanın."
+      "description": "Cline’ın yerel modellerini veya Studio’da seçilen modelleri kullanın.",
+      "views": {
+        "native-login": "Yerel oturum açma"
+      }
     }
   },
-  "version": "0.1.0",
+  "version": "0.2.0",
   "apiVersion": 1,
   "server": "server.mjs",
   "icon": "assets/icon.png",
   "permissions": [
-    "agents"
+    "agents",
+    "ui"
   ],
   "repository": "https://github.com/EKKOLearnAI/ekko-studio-plugin-cline",
   "homepage": "https://cline.bot/cli",
-  "license": "MIT"
+  "license": "MIT",
+  "client": "client.mjs",
+  "views": [
+    {
+      "id": "native-login",
+      "title": "Native login",
+      "slot": "agent-settings",
+      "icon": "settings"
+    }
+  ]
 }

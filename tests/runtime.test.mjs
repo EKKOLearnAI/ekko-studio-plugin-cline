@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, readFile, readdir, rm, stat } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -12,9 +12,12 @@ const lifecycle = { add() {} }
 const owner = { userId: 1, profile: 'default', agentId: 'plugin:cline/cline' }
 const input = { input: [{ type: 'text', text: 'inspect this' }], history: [], instructions: [], options: {} }
 
-function agent() {
+function agent(root, captureRpc = () => {}) {
   let definition
-  apply({ identity: owner, extensions: { agents: { register(value) { definition = value; return { dispose() {} } } } } })
+  apply({ identity: owner, paths: { dataDir: root }, extensions: {
+    agents: { register(value) { definition = value; return { dispose() {} } } },
+    rpc: { register(name, handler) { captureRpc(name, handler); return () => {} } },
+  } })
   return definition
 }
 
@@ -50,8 +53,8 @@ async function chat(definition, root, name, { model, decision, assets = {} } = {
 }
 
 test('reports the external status, native catalog and owner scope', async t => {
-  await useFixture(t)
-  const definition = agent()
+  const root = await useFixture(t)
+  const definition = agent(root)
   const ctx = { identity: owner, signal: new AbortController().signal, lifecycle }
   assert.deepEqual(await definition.getStatus(ctx), { installed: true, source: 'external', version: '3.0.75' })
   const models = await definition.modes.global.listModels(ctx)
@@ -64,9 +67,36 @@ test('reports the external status, native catalog and owner scope', async t => {
   assert.throws(() => definition.runtime.createSession({ ...ctx, mode: 'global', identity: { ...owner, userId: 2 } }), /native credentials/)
 })
 
+test('offers the managed install action and exposes the login command only to the owner', async t => {
+  const root = await useFixture(t)
+  const engineDirectory = join(root, 'engine')
+  await mkdir(engineDirectory)
+  await writeFile(join(engineDirectory, 'current.json'), 'null')
+  const rpc = new Map()
+  const definition = agent(root, (name, handler) => rpc.set(name, handler))
+  const ctx = { identity: owner, signal: new AbortController().signal }
+  assert.deepEqual(definition.management.settings(ctx), { viewId: 'native-login' })
+  assert.match((await rpc.get('native-login')(null, ctx)).command, /--config.*auth/)
+  await assert.rejects(rpc.get('native-login')(null, { ...ctx, identity: { ...owner, userId: 2 } }), /native credentials/)
+
+  delete process.env.EKKO_CLINE_EXECUTABLE
+  const platform = process.platform === 'win32' ? 'windows' : process.platform
+  const platformPackage = '@cline/cli-' + platform + '-' + process.arch
+  t.mock.method(globalThis, 'fetch', async url => {
+    assert.equal(url, 'https://registry.npmjs.org/cline/latest')
+    return Response.json({ name: 'cline', version: '3.0.75', optionalDependencies: { [platformPackage]: '3.0.75' } })
+  })
+  assert.deepEqual(await definition.getStatus(ctx), { installed: false, version: '', source: 'managed' })
+  assert.deepEqual(await definition.management.checkUpdate(ctx), { currentVersion: '', latestVersion: '3.0.75', updateAvailable: true })
+  assert.equal(typeof definition.management.upgrade, 'function')
+  assert.equal(typeof definition.management.remove, 'function')
+  assert.equal(definition.management.installGuideUrl, undefined)
+  assert.deepEqual(await rpc.get('native-login')(null, ctx), { command: '' })
+})
+
 test('isolates concurrent model choices, filters foreign events and asks for each tool', async t => {
   const root = await useFixture(t)
-  const definition = agent()
+  const definition = agent(root)
   const first = await chat(definition, root, 'first', { model: 'model-b', decision: 'approved' })
   const second = await chat(definition, root, 'second', { model: 'model-a', decision: 'denied' })
   const results = await Promise.all([first, second].map(run => run.session.run(input, run.ctx)))
@@ -83,7 +113,7 @@ test('isolates concurrent model choices, filters foreign events and asks for eac
 
 test('passes attachment bytes to the engine and removes the private staging directory', async t => {
   const root = await useFixture(t, 'attach')
-  const run = await chat(agent(), root, 'attachments', { assets: {
+  const run = await chat(agent(root), root, 'attachments', { assets: {
     text: { name: 'file with spaces.txt', mediaType: 'text/plain', bytes: Buffer.from('file bytes') },
     image: { name: 'photo.png', mediaType: 'image/png', bytes: Buffer.from('image bytes') },
   } })
@@ -98,7 +128,7 @@ test('passes attachment bytes to the engine and removes the private staging dire
 
 test('stops before prompting when the engine cannot confirm model or approval settings', async t => {
   const root = await useFixture(t, 'unsafe')
-  const definition = agent()
+  const definition = agent(root)
   const unsafe = await chat(definition, root, 'unsafe')
   await assert.rejects(unsafe.session.run(input, unsafe.ctx), /auto-approval is disabled/)
   await assert.rejects(stat(join(unsafe.ctx.paths.workspaceDir, 'prompt-received')), { code: 'ENOENT' })
@@ -109,12 +139,12 @@ test('stops before prompting when the engine cannot confirm model or approval se
   process.env.CLINE_MODEL = 'auth'
   const catalog = await definition.modes.global.listModels(unsafe.ctx)
   assert.equal(catalog.status, 'auth_required')
-  assert.match(catalog.message, /cline auth/)
+  assert.match(catalog.message, /native login command/)
 })
 
 test('cancels the native prompt for the active Studio turn', async t => {
   const root = await useFixture(t, 'cancel')
-  const run = await chat(agent(), root, 'cancel')
+  const run = await chat(agent(root), root, 'cancel')
   const pending = assert.rejects(run.session.run(input, run.ctx), /turn cancelled/)
   const promptFile = join(run.ctx.paths.workspaceDir, 'prompt-received')
   for (let retry = 0; retry < 200; retry++) {

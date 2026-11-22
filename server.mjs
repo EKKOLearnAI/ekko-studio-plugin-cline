@@ -2,12 +2,15 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { extname, join } from 'node:path'
 import { Acp, AcpError } from './acp.mjs'
-import { childEnvironment, configArgs, engineVersion, findEngine } from './engine.mjs'
+import { childEnvironment, configArgs, loginCommand } from './engine.mjs'
+import { managedEngine } from './managed-engine.mjs'
+import { createScopedConfig, scopedProtocols, scopedProvider } from './scoped.mjs'
+import { registerRpc } from './sdk/harness/contracts.mjs'
 import manifest from './plugin.json' with { type: 'json' }
+import contract from './contracts/plugin.json' with { type: 'json' }
 
-const guide = 'https://cline.bot/cli'
-const signIn = 'Run cline auth on the Studio host with the configured Cline directory, then refresh the model list.'
-const unavailable = 'Install Cline CLI on the Studio host or set EKKO_CLINE_EXECUTABLE.'
+const signIn = 'Open Cline settings in Agent management and run the native login command, then refresh the model list.'
+const unavailable = 'Install Cline CLI from Studio Agent management.'
 const ownerOnly = 'Cline native credentials are available only to the Studio account and Profile that enabled the plugin.'
 const stopReasons = { end_turn: 'stop', refusal: 'stop', max_tokens: 'length', max_turn_requests: 'tool_limit' }
 const toolKinds = new Set(['read', 'edit', 'delete', 'move', 'search', 'execute', 'think', 'fetch', 'switch_mode', 'other'])
@@ -16,9 +19,9 @@ const text = value => ({ type: 'text', text: value })
 const validId = value => typeof value === 'string' && value.trim() === value && value.length > 0 && value.length <= 512
 const sameOwner = (left, right) => left.userId === right.userId && left.profile === right.profile
 
-function setupAcp(engine, cwd, onFrame) {
-  const args = [...engine.prefix, '--acp', '--auto-approve', 'false', ...configArgs()]
-  return new Acp(engine.command, args, { cwd, env: childEnvironment() }, onFrame)
+function setupAcp(engine, cwd, onFrame, scoped) {
+  const args = [...engine.prefix, '--acp', '--auto-approve', 'false', ...(scoped?.args ?? configArgs())]
+  return new Acp(engine.command, args, { cwd, env: scoped?.env ?? childEnvironment() }, onFrame)
 }
 
 async function startSession(acp, cwd, mcpServers, signal) {
@@ -118,13 +121,12 @@ function scrub(value, secret) {
     .slice(0, 4096)
 }
 
-async function requestPermission(params, run, signal) {
+async function requestPermission(params, run, signal, secret) {
   const tool = params.toolCall
   const options = Array.isArray(params.options) ? params.options.filter(option => validId(option?.optionId)) : []
   const allow = options.filter(option => option.kind === 'allow_once')
   const reject = options.find(option => option.kind === 'reject_once')
   if (!validId(tool?.toolCallId) || allow.length !== 1 || new Set(options.map(option => option.optionId)).size !== options.length || signal.aborted) return cancelled
-  const secret = process.env.CLINE_API_KEY
   const title = scrub(tool.title, secret) || 'Cline tool request'
   const raw = tool.rawInput
   const details = scrub(typeof raw === 'string' ? raw : raw?.command ?? raw?.path ?? raw?.filePath, secret) || title
@@ -227,6 +229,7 @@ async function executeTurn(input, run, getEngine, signal) {
   const currentSignal = AbortSignal.any([signal, finishing.signal])
   const interrupted = Promise.withResolvers()
   let acp
+  let scoped
   let currentSession
   let updates = Promise.resolve()
   let streamError
@@ -238,15 +241,20 @@ async function executeTurn(input, run, getEngine, signal) {
   }
   try {
     signal.throwIfAborted()
+    if (run.mode === 'scoped') {
+      if (!validId(run.model?.model)) throw new Error('Select a Studio model for Cline.')
+      scoped = await createScopedConfig(run.model, run.paths.runtimeDir, signal)
+    }
     const prompt = await buildPrompt(input, attachments)
     signal.throwIfAborted()
+    const secret = scoped ? scoped.env.CLINE_API_KEY : process.env.CLINE_API_KEY
     acp = setupAcp(executable, cwd, ({ id, method, params }) => {
       const current = currentSession && params?.sessionId === currentSession && !currentSignal.aborted
       if (id !== undefined) {
         if (method !== 'session/request_permission') acp.methodNotFound(id)
         else if (!current) acp.respond(id, cancelled)
         else {
-          void requestPermission(params, run, currentSignal)
+          void requestPermission(params, run, currentSignal, secret)
             .then(result => acp.respond(id, currentSignal.aborted ? cancelled : result))
             .catch(() => {})
         }
@@ -255,11 +263,14 @@ async function executeTurn(input, run, getEngine, signal) {
           if (!currentSignal.aborted && !streamError) await turn.update(params.update)
         }).catch(error => { streamError = error })
       }
-    })
+    }, scoped)
     signal.addEventListener('abort', abort, { once: true })
     run.lifecycle.add(() => acp.close())
     const startup = AbortSignal.any([signal, AbortSignal.timeout(20_000)])
     const controls = await startSession(acp, cwd, run.mcpServers ?? {}, startup)
+    if (scoped && (control(controls, 'provider') !== scopedProvider || control(controls, 'model') !== run.model.model)) {
+      throw new Error('Cline did not confirm the bound Studio model.')
+    }
     if (run.model?.model) await selectModel(acp, controls, run.model.model, startup)
     else if (!modelsFrom(controls).has(control(controls, 'model') ?? controls.models?.currentModelId)) {
       throw new Error('Select a model from the active Cline provider before starting a turn.')
@@ -276,7 +287,9 @@ async function executeTurn(input, run, getEngine, signal) {
     if (!Object.hasOwn(stopReasons, result?.stopReason)) throw new Error('Cline returned an unsupported stop reason.')
     return { content: [text(turn.answer)], finishReason: stopReasons[result.stopReason] }
   } catch (error) {
-    if (error instanceof AcpError && error.code === -32000) throw new Error(signIn)
+    if (error instanceof AcpError && error.code === -32000) {
+      throw new Error(scoped ? 'Cline could not authenticate with the selected Studio model.' : signIn)
+    }
     if (error instanceof AcpError) throw new Error('Cline rejected an ACP request. Check the selected provider, model and native configuration.')
     if (!signal.aborted && error?.name === 'TimeoutError') throw new Error('Cline ACP startup timed out.')
     throw error
@@ -284,12 +297,12 @@ async function executeTurn(input, run, getEngine, signal) {
     finishing.abort()
     signal.removeEventListener('abort', abort)
     try { await acp?.close() }
-    finally { await attachments.dispose() }
+    finally { await Promise.all([attachments.dispose(), scoped?.dispose()]) }
   }
 }
 
 function createSession(owner, session, getEngine) {
-  if (session.mode !== 'global' || !sameOwner(owner, session.identity)) throw new Error(ownerOnly)
+  if (session.mode !== 'scoped' && (session.mode !== 'global' || !sameOwner(owner, session.identity))) throw new Error(ownerOnly)
   const disposed = new AbortController()
   let active
   return {
@@ -297,7 +310,9 @@ function createSession(owner, session, getEngine) {
       if (!sameOwner(session.identity, run.identity) || session.identity.sessionId !== run.identity.sessionId
         || session.identity.agentId !== run.identity.agentId || run.mode !== session.mode) throw new Error(ownerOnly)
       if (active) throw new Error('Cline is already running in this Studio session.')
-      if (run.model?.reasoningEffort) throw new Error('Use the Cline native model configuration for reasoning settings.')
+      if (run.mode === 'global' && run.model?.reasoningEffort) {
+        throw new Error('Use the Cline native model configuration for reasoning settings.')
+      }
       const remaining = run.deadlineAt - Date.now()
       if (remaining <= 0) throw new Error('Cline turn timed out.')
       const deadline = AbortSignal.timeout(remaining)
@@ -322,28 +337,30 @@ function createSession(owner, session, getEngine) {
 
 export function apply(ctx) {
   const owner = { userId: ctx.identity.userId, profile: ctx.identity.profile }
-  const getEngine = () => findEngine()
+  const manager = managedEngine(ctx.paths.dataDir)
+  const getEngine = async () => (await manager.resolve()).engine
+  const checkOwner = run => { if (!sameOwner(owner, run.identity)) throw new Error(ownerOnly) }
+  const disposeRpc = registerRpc(ctx, contract, 'native-login', async (_input, run) => {
+    checkOwner(run)
+    run.signal.throwIfAborted()
+    return { command: loginCommand(await getEngine()) }
+  })
   const registration = ctx.extensions.agents.register({
     id: 'cline', name: 'Cline CLI', vendor: 'Cline', description: manifest.description,
     agentApiVersion: 1,
-    async getStatus(run) {
-      try {
-        const executable = await getEngine()
-        if (!executable) return { installed: false, version: '', source: 'not-installed' }
-        const version = await engineVersion(executable, childEnvironment(), run.signal)
-        if (version) return { installed: true, version, source: 'external' }
-        return { installed: false, version: '', source: 'not-installed', error: 'Cline CLI returned an invalid version.' }
-      } catch {
-        run.signal.throwIfAborted()
-        return { installed: false, version: '', source: 'not-installed', error: 'Could not start Cline CLI. Check the executable on the Studio host.' }
-      }
+    getStatus: run => manager.status(run.signal),
+    management: {
+      settings(run) { checkOwner(run); return { viewId: 'native-login' } },
+      checkUpdate(run) { checkOwner(run); return manager.checkUpdate(run) },
+      upgrade(input, run) { checkOwner(run); return manager.upgrade(input, run) },
+      remove(run) { checkOwner(run); return manager.remove(run) },
     },
-    management: { installGuideUrl: guide },
     modes: {
       global: { listModels: run => sameOwner(owner, run.identity) ? listModels(run, getEngine) : catalog('auth_required', ownerOnly) },
+      scoped: { protocols: scopedProtocols },
     },
     features: { surfaces: ['chat'], streaming: true, resume: false },
     runtime: { createSession: session => createSession(owner, session, getEngine) },
   })
-  return () => registration.dispose()
+  return async () => { await Promise.all([registration.dispose(), disposeRpc()]) }
 }

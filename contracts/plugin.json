@@ -1,8 +1,25 @@
 {
   "schemaVersion": 1,
-  "description": "Cline implements Studio Agent API v1 for global single chat. Host requests, outputs and identity are defined in sdk/src/agents.ts. Native model choices and approvals are ACP session state.",
-  "models": {},
-  "rpc": {},
+  "description": "Cline implements Studio Agent API v1 for global and scoped single chat. Host requests, outputs and identity are defined in sdk/src/agents.ts. Native model choices and approvals are ACP session state.",
+  "models": {
+    "empty": { "type": "null", "description": "Omit the request input to receive the current command." },
+    "loginCommand": {
+      "type": "object",
+      "description": "Interactive native login command for the activating Studio account and Profile.",
+      "properties": {
+        "command": { "type": "string", "description": "Shell-quoted Cline auth invocation. Empty if the engine is not installed.", "maxLength": 16384 }
+      },
+      "required": ["command"],
+      "additionalProperties": false
+    }
+  },
+  "rpc": {
+    "native-login": {
+      "description": "Read the command for the selected external or Studio-managed native Cline engine. Returns no credentials.",
+      "input": "empty",
+      "output": "loginCommand"
+    }
+  },
   "storage": {},
   "tools": {},
   "commands": {},

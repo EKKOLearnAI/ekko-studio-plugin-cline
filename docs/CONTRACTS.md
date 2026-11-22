@@ -1,15 +1,23 @@
 # Cline plugin contract
 
-The manifest ID and local Agent ID are both `cline`. The backend registers Agent API v1 in `apply(ctx)`. The [SDK types](../sdk/src/agents.ts) define the host inputs and outputs. The plugin owns no Studio storage, RPCs, settings views, or checkpoints.
+The manifest ID and local Agent ID are both `cline`. The backend registers Agent API v1 in `apply(ctx)`. The [SDK types](../sdk/src/agents.ts) define the host inputs and outputs. The plugin supports global and scoped single chat with streaming.
+
+## Engine management and login
+
+- Agent management uses the latest metadata for the official `cline` npm release. The plugin installs its matching `@cline/cli-<platform>-<architecture>` package without lifecycle scripts. The standalone CLI runs directly and needs no npm wrapper at runtime.
+- Plugin data under `engine/` contains the managed releases and `current.json`. A missing pointer preserves detection of an existing external engine. A null pointer represents a removed managed engine. A `release-…` value selects a verified staged installation. Upgrade compares the previous version, validates the staged binary version, commits the selection atomically and then removes the old release. Engine removal retains the Cline login and configuration.
+- The activating Studio user and Profile can manage the engine and open the native login command. The `native-login` RPC returns a shell-quoted executable, configuration override if present, and `auth`. It returns an empty string when Cline is missing. The settings view displays that command without reading credentials.
+- `EKKO_CLINE_EXECUTABLE` still takes precedence as an external engine override. Before a managed installation, a native binary on PATH or an official npm wrapper may also be detected. Status exposes the runtime version and source.
 
 ## Native runtime
 
-- The Studio account and Profile that enabled the plugin own native authentication. A run must match the created Studio session, Agent, mode, account, and Profile.
-- Cline is launched directly using an argument array. `--acp --auto-approve false` starts ACP v1. Studio requires the Cline identity and an explicit false auto-approval control before sending any prompt. Tool approval maps to the native one-time allow or reject option. Timeout, cancellation and failed interactions yield cancelled.
-- The model catalog comes from `session/new` for the active native provider. A model requested by Studio must exist in that catalog. `session/set_config_option` applies it only to the new native session. The response must confirm the model, provider and disabled auto-approval.
-- Each run launches one native process. The plugin supplies the host's instructions and prior Studio messages before the current prompt. It forwards incremental text, reasoning summaries and tool lifecycle events from the active ACP session. The complete streamed answer is returned once. Run cancellation sends `session/cancel` and closes the process. A finite startup timeout, run deadline and session disposal also release the process.
-- Attachments are read through the host's authorized APIs. A run-private directory contains the file bytes and is removed when the run ends. The prompt supplies the matching path for the file-reading tool. This is compatible with Cline 3.0.75's ACP prompt handler, which extracts text blocks. The total is capped at 32 attachments and 32 MiB.
-- Studio MCP entries are passed through ACP setup. Cline 3.0.75 records the entries during setup. Execution of run-scoped Studio MCP tools still needs upstream or end-to-end verification.
-- Native stderr and JSON-RPC error data are kept out of Studio logs and approval messages. Model selection does not write to native defaults. Cline maintains its normal OS-level configuration and its own local logs.
+- The Studio account and Profile that enabled the plugin own the global native login. Scoped mode uses the actual caller’s Studio model authorization. A run must match the created Studio session, Agent, mode, account and Profile.
+- Cline is launched with `--acp --auto-approve false`. Studio requires the Cline ACP v1 identity and explicit false auto-approval before prompting. Interactive approvals map to native one-time allow or reject. Timeout, cancellation and failed interactions yield cancelled.
+- The global model catalog comes from `session/new` for the active native provider. The selected model must exist in that catalog. The response to `session/set_config_option` must confirm the model, provider and disabled auto-approval. Model selection does not write the native default.
+- Scoped writes per-turn `providers.json` and `models.json` in a private directory. The model registry supplies the exact Studio-selected model ID and available limits. The isolated native provider talks to an authenticated loopback proxy over Chat Completions. The proxy adds the Studio lease credential when calling the host. Cline receives only a per-turn loopback key. The proxy and isolated directory are released on completion, cancellation or failure. The plugin verifies Cline’s scoped provider and model before prompting.
+- Each turn starts a native process and receives the host’s instructions and prior messages. It forwards incremental text, reasoning summaries and tool events from the active ACP session. The complete answer is returned once. Cancellation sends `session/cancel` and closes the process. Startup timeout and session disposal also release the process.
+- Attachments are read through authorized Studio APIs. A run-private directory contains the bytes and is removed when the run ends. The prompt supplies a path for Cline’s file-reading tool. Cline 3.0.75’s ACP prompt handler extracts text blocks. The per-turn limit is 32 attachments and 32 MiB.
+- Studio sends its MCP entries through ACP setup. Cline 3.0.75 records those entries at setup time. Actual execution of run-scoped Studio MCP tools still needs verification.
+- Native stderr and JSON-RPC error data are kept out of Studio logs and approval messages. Cline maintains its own normal logs in the configured directory.
 
-The Agent advertises global single chat, streaming, and a manual install guide. Native conversation resume, scoped model proxy, and engine management are outside this version's capability declaration.
+The Agent advertises single chat and streaming. Native conversation resume remains disabled.
