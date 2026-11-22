@@ -112,7 +112,7 @@
       }
     }
   },
-  "version": "0.3.1",
+  "version": "0.3.2",
   "apiVersion": 1,
   "server": "server.mjs",
   "icon": "assets/icon.png",
@@ -120,6 +120,9 @@
     "agents",
     "ui"
   ],
+  "author": {
+    "name": "Ekko Studio"
+  },
   "repository": "https://github.com/EKKOLearnAI/ekko-studio-plugin-cline",
   "homepage": "https://cline.bot/cli",
   "license": "MIT",
