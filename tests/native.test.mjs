@@ -17,7 +17,7 @@ function respond(res, model, block, delta, stopReason) {
   const send = (type, value) => res.write('event: ' + type + '\ndata: ' + JSON.stringify({ type, ...value }) + '\n\n')
   send('message_start', { message: {
     id: 'msg_fixture', type: 'message', role: 'assistant', model, content: [], stop_reason: null, stop_sequence: null,
-    usage: { input_tokens: 30, output_tokens: 0 },
+    usage: { input_tokens: 30, output_tokens: 0, cache_creation_input_tokens: 4, cache_read_input_tokens: 6 },
   } })
   send('content_block_start', { index: 0, content_block: block })
   send('content_block_delta', { index: 0, delta })
@@ -113,6 +113,7 @@ test('official Cline routes concurrent model choices and honors Studio allow and
       history: [], instructions: [], options: {},
     }, ctx)
     assert.deepEqual(await readdir(runtimeDir), [])
+    assert.deepEqual(answer.usage, { inputTokens: 68, outputTokens: 24, cacheReadTokens: 12, isEstimated: false })
     return answer.content[0].text
   }))
   assert.deepEqual(errors, [])

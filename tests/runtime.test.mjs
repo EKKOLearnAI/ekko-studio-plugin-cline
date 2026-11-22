@@ -75,7 +75,7 @@ test('offers the managed install action and exposes the login command only to th
   const rpc = new Map()
   const definition = agent(root, (name, handler) => rpc.set(name, handler))
   const ctx = { identity: owner, signal: new AbortController().signal }
-  assert.deepEqual(definition.management.settings(ctx), { viewId: 'native-login' })
+  assert.deepEqual(definition.management.settings(ctx), { viewId: 'skills' })
   assert.match((await rpc.get('native-login')(null, ctx)).command, /--config.*auth/)
   await assert.rejects(rpc.get('native-login')(null, { ...ctx, identity: { ...owner, userId: 2 } }), /native credentials/)
 

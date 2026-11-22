@@ -7,88 +7,112 @@
       "name": "Cline CLI",
       "description": "Run Cline CLI with native or Studio-selected models.",
       "views": {
-        "native-login": "Native login"
+        "skills": "Skills",
+        "mcp": "MCP servers",
+        "native-login": "Configuration file"
       }
     },
     "zh": {
       "name": "Cline CLI",
       "description": "使用 Cline 原生模型或在 Studio 中选择的模型。",
       "views": {
-        "native-login": "原生登录"
+        "skills": "Skill 管理",
+        "mcp": "MCP 管理",
+        "native-login": "配置文件"
       }
     },
     "zh-TW": {
       "name": "Cline CLI",
       "description": "使用 Cline 原生模型或在 Studio 中選擇的模型。",
       "views": {
-        "native-login": "原生登入"
+        "skills": "Skill 管理",
+        "mcp": "MCP 管理",
+        "native-login": "設定檔"
       }
     },
     "ja": {
       "name": "Cline CLI",
       "description": "Cline のネイティブモデルまたは Studio で選択したモデルを使用します。",
       "views": {
-        "native-login": "ネイティブログイン"
+        "skills": "スキル管理",
+        "mcp": "MCP サーバー",
+        "native-login": "設定ファイル"
       }
     },
     "ko": {
       "name": "Cline CLI",
       "description": "Cline 기본 모델이나 Studio에서 선택한 모델을 사용합니다.",
       "views": {
-        "native-login": "네이티브 로그인"
+        "skills": "스킬 관리",
+        "mcp": "MCP 서버",
+        "native-login": "구성 파일"
       }
     },
     "fr": {
       "name": "Cline CLI",
       "description": "Utilisez les modèles natifs de Cline ou ceux sélectionnés dans Studio.",
       "views": {
-        "native-login": "Connexion native"
+        "skills": "Compétences",
+        "mcp": "Serveurs MCP",
+        "native-login": "Fichier de configuration"
       }
     },
     "es": {
       "name": "Cline CLI",
       "description": "Usa los modelos nativos de Cline o los seleccionados en Studio.",
       "views": {
-        "native-login": "Inicio de sesión nativo"
+        "skills": "Skills",
+        "mcp": "Servidores MCP",
+        "native-login": "Archivo de configuración"
       }
     },
     "de": {
       "name": "Cline CLI",
       "description": "Verwende native Cline-Modelle oder in Studio ausgewählte Modelle.",
       "views": {
-        "native-login": "Native Anmeldung"
+        "skills": "Skills",
+        "mcp": "MCP-Server",
+        "native-login": "Konfigurationsdatei"
       }
     },
     "pt": {
       "name": "Cline CLI",
       "description": "Use os modelos nativos do Cline ou os selecionados no Studio.",
       "views": {
-        "native-login": "Login nativo"
+        "skills": "Skills",
+        "mcp": "Servidores MCP",
+        "native-login": "Arquivo de configuração"
       }
     },
     "ru": {
       "name": "Cline CLI",
       "description": "Используйте собственные модели Cline или модели, выбранные в Studio.",
       "views": {
-        "native-login": "Вход в CLI"
+        "skills": "Навыки",
+        "mcp": "Серверы MCP",
+        "native-login": "Файл конфигурации"
       }
     },
     "ar": {
       "name": "Cline CLI",
       "description": "استخدم نماذج Cline الأصلية أو النماذج التي تختارها في Studio.",
       "views": {
-        "native-login": "تسجيل الدخول من الطرفية"
+        "skills": "المهارات",
+        "mcp": "خوادم MCP",
+        "native-login": "ملف الإعدادات"
       }
     },
     "tr": {
       "name": "Cline CLI",
       "description": "Cline’ın yerel modellerini veya Studio’da seçilen modelleri kullanın.",
       "views": {
-        "native-login": "Yerel oturum açma"
+        "skills": "Beceriler",
+        "mcp": "MCP sunucuları",
+        "native-login": "Yapılandırma dosyası"
       }
     }
   },
-  "version": "0.2.0",
+  "version": "0.3.0",
   "apiVersion": 1,
   "server": "server.mjs",
   "icon": "assets/icon.png",
@@ -102,8 +126,20 @@
   "client": "client.mjs",
   "views": [
     {
+      "id": "skills",
+      "title": "Skills",
+      "slot": "agent-settings",
+      "icon": "skills"
+    },
+    {
+      "id": "mcp",
+      "title": "MCP servers",
+      "slot": "agent-settings",
+      "icon": "mcp"
+    },
+    {
       "id": "native-login",
-      "title": "Native login",
+      "title": "Configuration file",
       "slot": "agent-settings",
       "icon": "settings"
     }

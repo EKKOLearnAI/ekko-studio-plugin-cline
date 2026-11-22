@@ -1,9 +1,10 @@
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { extname, join } from 'node:path'
 import { Acp, AcpError } from './acp.mjs'
-import { childEnvironment, configArgs, loginCommand } from './engine.mjs'
+import { childEnvironment, configArgs, loginCommand, nativeConfigDir } from './engine.mjs'
 import { managedEngine } from './managed-engine.mjs'
+import { nativeConfiguration } from './native-config.mjs'
 import { createScopedConfig, scopedProtocols, scopedProvider } from './scoped.mjs'
 import { registerRpc } from './sdk/harness/contracts.mjs'
 import manifest from './plugin.json' with { type: 'json' }
@@ -219,7 +220,31 @@ async function buildPrompt(input, attachments) {
   return prompt
 }
 
-async function executeTurn(input, run, getEngine, signal) {
+async function nativeTurnUsage(sessionId) {
+  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(sessionId)) return
+  try {
+    const directory = join(nativeConfigDir(), 'data', 'sessions', sessionId)
+    if (!(await lstat(directory)).isDirectory()) return
+    const file = join(directory, sessionId + '.json')
+    const entry = await lstat(file)
+    if (!entry.isFile() || entry.size > 1024 * 1024) return
+    const record = JSON.parse(await readFile(file, 'utf8'))
+    if (record.session_id !== sessionId) return
+    const counts = record.metadata?.aggregateUsage ?? record.metadata?.usage
+    const count = value => Number.isSafeInteger(value) && value >= 0
+    if (!count(counts?.inputTokens) || !count(counts.outputTokens)) return
+    const cached = count(counts.cacheReadTokens) ? counts.cacheReadTokens : 0
+    return {
+      // Cline includes both cache reads and writes in its aggregate input.
+      inputTokens: Math.max(0, counts.inputTokens - cached),
+      outputTokens: counts.outputTokens,
+      cacheReadTokens: cached,
+      isEstimated: false,
+    }
+  } catch { /* An older engine or missing metadata falls back to Studio estimates. */ }
+}
+
+async function executeTurn(input, run, getEngine, signal, canUseNativeResources) {
   const executable = await getEngine()
   if (!executable) throw new Error(unavailable)
   const cwd = await realpath(run.paths.workspaceDir)
@@ -243,7 +268,11 @@ async function executeTurn(input, run, getEngine, signal) {
     signal.throwIfAborted()
     if (run.mode === 'scoped') {
       if (!validId(run.model?.model)) throw new Error('Select a Studio model for Cline.')
-      scoped = await createScopedConfig(run.model, run.paths.runtimeDir, signal)
+      let nativeRoot
+      if (canUseNativeResources) {
+        try { nativeRoot = nativeConfigDir() } catch { /* Scope can run with its own configuration. */ }
+      }
+      scoped = await createScopedConfig(run.model, run.paths.runtimeDir, signal, nativeRoot)
     }
     const prompt = await buildPrompt(input, attachments)
     signal.throwIfAborted()
@@ -285,7 +314,13 @@ async function executeTurn(input, run, getEngine, signal) {
     signal.throwIfAborted()
     if (result?.stopReason === 'cancelled') throw new Error('Cline cancelled the prompt.')
     if (!Object.hasOwn(stopReasons, result?.stopReason)) throw new Error('Cline returned an unsupported stop reason.')
-    return { content: [text(turn.answer)], finishReason: stopReasons[result.stopReason] }
+    let usage
+    if (!scoped) {
+      await acp.close()
+      signal.throwIfAborted()
+      usage = await nativeTurnUsage(controls.sessionId)
+    }
+    return { content: [text(turn.answer)], finishReason: stopReasons[result.stopReason], ...(usage ? { usage } : {}) }
   } catch (error) {
     if (error instanceof AcpError && error.code === -32000) {
       throw new Error(scoped ? 'Cline could not authenticate with the selected Studio model.' : signIn)
@@ -318,7 +353,7 @@ function createSession(owner, session, getEngine) {
       const deadline = AbortSignal.timeout(remaining)
       const signal = AbortSignal.any([session.signal, run.signal, disposed.signal, deadline])
       signal.throwIfAborted()
-      active = executeTurn(input, run, getEngine, signal)
+      active = executeTurn(input, run, getEngine, signal, sameOwner(owner, run.identity))
       try {
         return await active
       } catch (error) {
@@ -345,12 +380,24 @@ export function apply(ctx) {
     run.signal.throwIfAborted()
     return { command: loginCommand(await getEngine()) }
   })
+  const configRpc = Object.entries({
+    'list-skills': 'listSkills', 'get-skill': 'getSkill', 'save-skill': 'saveSkill', 'edit-skill': 'editSkill', 'remove-skill': 'removeSkill',
+    'list-mcp': 'listMcp', 'save-mcp': 'saveMcp', 'remove-mcp': 'removeMcp',
+    'get-settings-editor': 'getSettingsEditor', 'save-settings-editor': 'saveSettingsEditor',
+  }).map(([name, method]) => registerRpc(ctx, contract, name, async (input, run) => {
+    checkOwner(run)
+    run.signal.throwIfAborted()
+    const result = await nativeConfiguration(nativeConfigDir())[method](input)
+    if (method !== 'getSettingsEditor') return result
+    run.signal.throwIfAborted()
+    return { ...result, loginCommand: loginCommand(await getEngine()), status: await manager.status(run.signal) }
+  }))
   const registration = ctx.extensions.agents.register({
     id: 'cline', name: 'Cline CLI', vendor: 'Cline', description: manifest.description,
     agentApiVersion: 1,
     getStatus: run => manager.status(run.signal),
     management: {
-      settings(run) { checkOwner(run); return { viewId: 'native-login' } },
+      settings(run) { checkOwner(run); return { viewId: 'skills' } },
       checkUpdate(run) { checkOwner(run); return manager.checkUpdate(run) },
       upgrade(input, run) { checkOwner(run); return manager.upgrade(input, run) },
       remove(run) { checkOwner(run); return manager.remove(run) },
@@ -362,5 +409,5 @@ export function apply(ctx) {
     features: { surfaces: ['chat'], streaming: true, resume: false },
     runtime: { createSession: session => createSession(owner, session, getEngine) },
   })
-  return async () => { await Promise.all([registration.dispose(), disposeRpc()]) }
+  return async () => { await Promise.all([registration.dispose(), disposeRpc(), ...configRpc.map(dispose => dispose())]) }
 }

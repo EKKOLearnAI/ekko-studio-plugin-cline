@@ -1,10 +1,11 @@
 import { randomBytes } from 'node:crypto'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { childEnvironment } from './engine.mjs'
+import { nativeFiles } from './native-config.mjs'
 
 export const scopedProtocols = ['chat_completions']
 export const scopedProvider = 'ekko-studio'
@@ -63,7 +64,18 @@ async function startProxy(model, signal) {
   }
 }
 
-export async function createScopedConfig(model, runtimeDir, signal) {
+async function linkNativeResources(root, directory, settingsDir, signal) {
+  const { skillDir, mcpFile } = nativeFiles(root)
+  const inspect = path => lstat(path).catch(error => { if (error.code !== 'ENOENT') throw error })
+  const [skills, mcp] = await Promise.all([inspect(skillDir), inspect(mcpFile)])
+  if (skills?.isDirectory()) await symlink(skillDir, join(directory, 'skills'), process.platform === 'win32' ? 'junction' : 'dir')
+  if (mcp?.isFile() && mcp.size <= 1024 * 1024) {
+    const bytes = await readFile(mcpFile, { signal })
+    if (bytes.length <= 1024 * 1024) await writeFile(join(settingsDir, 'cline_mcp_settings.json'), bytes, { mode: 0o600, signal })
+  }
+}
+
+export async function createScopedConfig(model, runtimeDir, signal, nativeRoot) {
   signal.throwIfAborted()
   await mkdir(runtimeDir, { recursive: true, mode: 0o700 })
   const directory = await mkdtemp(join(runtimeDir, 'cline-scoped-'))
@@ -105,6 +117,7 @@ export async function createScopedConfig(model, runtimeDir, signal) {
     } }
     await writeFile(join(settingsDir, 'providers.json'), JSON.stringify(state), { mode: 0o600, signal })
     await writeFile(join(settingsDir, 'models.json'), JSON.stringify(registry), { mode: 0o600, signal })
+    if (nativeRoot) await linkNativeResources(nativeRoot, directory, settingsDir, signal)
     signal.throwIfAborted()
     return {
       args: ['--config', directory, '--data-dir', dataDir],

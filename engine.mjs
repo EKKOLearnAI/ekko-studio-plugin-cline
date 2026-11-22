@@ -29,6 +29,10 @@ export function configArgs(source = process.env) {
   return ['--config', dir]
 }
 
+export function nativeConfigDir() {
+  return configArgs()[1] ?? join(homedir(), '.cline')
+}
+
 export function loginCommand(engine) {
   if (!engine) return ''
   const args = [engine.command, ...engine.prefix, ...configArgs(), 'auth']
